@@ -5,6 +5,10 @@ import * as cheerio from 'cheerio';
 const USER_AGENT = 'FlyRankInternshipA9/1.0 (+https://github.com/linamarg/flyrank-05)';
 const CACHE_DIR = 'cache';
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function fetchPage(url, cacheFilePath) {
   if (fs.existsSync(cacheFilePath)) {
     const html = fs.readFileSync(cacheFilePath, 'utf-8');
@@ -21,6 +25,7 @@ async function fetchPage(url, cacheFilePath) {
     const html = await response.text();
     fs.writeFileSync(cacheFilePath, html);
     console.log('FETCH', cacheFilePath, html.length);
+    await delay(500); // pauses for 500ms
     return html;
   }
 }
@@ -38,11 +43,31 @@ function extractBookLinks(html, pageUrl) {
   return links;
 }
 
-const url = 'https://books.toscrape.com/catalogue/page-1.html';
-const cacheFilePath = 'cache/catalogue-page-1.html';
+function extractNextPage(html, pageUrl) {
+  const $ = cheerio.load(html);
+  const href = $('li.next a').attr('href');
 
-const html = await fetchPage(url, cacheFilePath);
-const bookLinks = extractBookLinks(html, url);
+  if (!href) {
+    return null;
+  }
 
-console.log('found links:', bookLinks.length);
-console.log(bookLinks.slice(0, 3)); // just print first 3 to sanity check
+  return new URL(href, pageUrl).href;
+}
+
+let currentUrl = 'https://books.toscrape.com/catalogue/page-1.html';
+let allBookLinks = [];
+
+for (let pageNum = 1; pageNum <= 3; pageNum++){
+  const cacheFilePath = `cache/catalogue-page-${pageNum}.html`;
+  const html = await fetchPage(currentUrl, cacheFilePath);
+  allBookLinks = allBookLinks.concat(extractBookLinks(html, currentUrl));
+  currentUrl = extractNextPage(html, currentUrl);
+}
+
+const uniqueUrls = [...new Set(allBookLinks)];
+
+console.log(`catalogue_pages=3`);
+console.log(`discovered=${allBookLinks.length}`);
+console.log(`unique_urls=${uniqueUrls.length}`);
+
+
