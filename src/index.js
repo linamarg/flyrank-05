@@ -37,7 +37,7 @@ function extractBookLinks(html, pageUrl) {
   $('.product_pod h3 a').each((i, el) => {
     const href = $(el).attr('href');
     const absoluteUrl = new URL(href, pageUrl).href;
-    links.push(absoluteUrl);
+    links.push({ url: absoluteUrl, sourcePage: pageUrl });
   });
 
   return links;
@@ -54,6 +54,35 @@ function extractNextPage(html, pageUrl) {
   return new URL(href, pageUrl).href;
 }
 
+function extractBookDetails(html, bookUrl, sourcePage) {
+  const $ = cheerio.load(html);
+
+  const title = $('h1').text();
+  const priceText = $('.price_color').text();
+  const availabilityText = $('.instock.availability').text().trim();
+  const ratingClass = $('.star-rating').attr('class');
+  const ratingText = ratingClass.split(' ')[1];
+  const descriptionEl = $('#product_description').next('p');
+  let description;
+  if(descriptionEl.length === 0){ 
+    description = null;
+  } else {
+    description = descriptionEl.text().trim();
+  }
+  
+
+  return {
+    title,
+    product_url: bookUrl,
+    price_text: priceText,
+    availability_text: availabilityText,
+    rating_text: ratingText,
+    description,
+    source_page: sourcePage,
+    fetched_at: new Date().toISOString()
+  };
+}
+
 let currentUrl = 'https://books.toscrape.com/catalogue/page-1.html';
 let allBookLinks = [];
 
@@ -64,10 +93,31 @@ for (let pageNum = 1; pageNum <= 3; pageNum++){
   currentUrl = extractNextPage(html, currentUrl);
 }
 
-const uniqueUrls = [...new Set(allBookLinks)];
+const seenUrls = new Set();
+const uniqueBooks = allBookLinks.filter(book => {
+  if (seenUrls.has(book.url)) {
+    return false; // already seen, drop it
+  }
+  seenUrls.add(book.url);
+  return true; // first time seeing it, keep it
+});
 
 console.log(`catalogue_pages=3`);
 console.log(`discovered=${allBookLinks.length}`);
-console.log(`unique_urls=${uniqueUrls.length}`);
+console.log(`unique_urls=${uniqueBooks.length}`);
 
+let allBookRecords = [];
 
+for (const book of uniqueBooks) {
+  const cachePath = `cache/book-${book.url.split('/').at(-2)}.html`;
+  const html = await fetchPage(book.url, cachePath);
+  const record = extractBookDetails(html, book.url, book.sourcePage);
+  allBookRecords.push(record);
+}
+
+console.log('detail_pages=' + allBookRecords.length);
+console.log(allBookRecords[0]);
+
+const fixtureHtml = fs.readFileSync('fixtures/no-description.html', 'utf-8');
+const fixtureRecord = extractBookDetails(fixtureHtml, 'https://fake-url/test', 'https://fake-source/test');
+console.log('fixture test — description should be null:', fixtureRecord.description);
